@@ -1,0 +1,52 @@
+services:
+  devcontainer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BASE_IMAGE: ${BASE_IMAGE:-aws-lambda-base:latest}
+        DOTNET_VERSION: ${DOTNET_VERSION:-9.0}
+    volumes:
+      # Workspace source — compose does not auto-mount the project (see init.sh).
+      - type: bind
+        source: ${LOCAL_WORKSPACE_FOLDER}
+        target: ${WORKSPACE_FOLDER}
+
+      # SSH keys — read-only; used for private git submodule access.
+      - type: bind
+        source: ${SSH_DIR}
+        target: /home/vscode/.ssh
+        read_only: true
+        bind:
+          create_host_path: true
+
+      # AWS credentials and config — shared across all variants, never in the image.
+      - type: bind
+        source: ${AWS_CONFIG_DIR}
+        target: /home/vscode/.aws
+        bind:
+          create_host_path: true
+
+      # Claude Code persistence — shared with all devcontainer variants.
+      - type: bind
+        source: ${CLAUDE_PERSIST_HOST_DIR}
+        target: /home/vscode/.claude-persist
+        bind:
+          create_host_path: true
+
+      # Shared NuGet package cache (host, under $HOME) — reused across all C# projects.
+      - type: bind
+        source: ${NUGET_HOST_DIR}
+        target: /home/vscode/.nuget/packages
+        bind:
+          create_host_path: true
+
+      # Docker-out-of-Docker: bind host socket.
+      - type: bind
+        source: ${DOCKER_SOCK:-/var/run/docker.sock}
+        target: /var/run/docker.sock
+    group_add:
+      - ${DOCKER_GID:-docker}
+    # Land in the mounted workspace on exec / VS Code attach (else defaults to /).
+    working_dir: ${WORKSPACE_FOLDER}
+    command: sleep infinity

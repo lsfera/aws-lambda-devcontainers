@@ -1,0 +1,34 @@
+{
+  "name": "AWS Lambda Base",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "devcontainer",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+
+  // Runs on the HOST before the container is created or started.
+  // Generates .env (with real $HOME path) and pre-creates the Claude persist directory.
+  "initializeCommand": "bash -c 'ws=\"$1\"; d=\"$ws\"; while [ \"$d\" != \"/\" ]; do if [ -f \"$d/.devcontainer/init.sh\" ]; then exec bash \"$d/.devcontainer/init.sh\" \"$ws\"; fi; d=$(dirname \"$d\"); done; echo \"init.sh not found above $ws\" >&2; exit 1' -- ${localWorkspaceFolder}",
+
+  // Claude Code plugin installed as a devcontainer feature
+  "features": {
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {}
+  },
+
+  // Run as non-root user (vscode, uid 1000) — rootless devcontainer
+  "remoteUser": "vscode",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "amazonwebservices.aws-toolkit-vscode",
+        "ms-azuretools.vscode-docker"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  },
+
+  // claude-persist-setup redirects ~/.claude* to the bind mount first, so everything
+  // devcontainer-update writes (MCP registrations, WA skills) lands in persisted storage.
+  "postCreateCommand": "claude-persist-setup && devcontainer-update"
+}

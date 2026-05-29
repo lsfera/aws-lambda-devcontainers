@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Register AWS MCP servers with Claude Code at user scope.
+# Runs at container creation (postCreateCommand) — idempotent, safe to re-run.
+#
+# All servers use uvx (from uv) to fetch and run awslabs Python packages on demand.
+# AWS credentials are NOT required at registration time; they are resolved by the
+# standard AWS credential chain (env vars / ~/.aws/credentials / IAM role) at runtime.
+#
+# Servers registered:
+#   aws-docs       — search AWS documentation and API references
+#   aws-iac        — CDK constructs, CloudFormation best practices, security validation
+#   aws-lambda     — invoke Lambda functions as Claude tools
+#   aws-serverless — SAM CLI integration and serverless app lifecycle
+#
+# Override log verbosity:   FASTMCP_LOG_LEVEL=DEBUG claude-aws-mcp-setup
+set -euo pipefail
+
+LOG="${FASTMCP_LOG_LEVEL:-ERROR}"
+
+_register() {
+  local name="$1"
+  local package="$2"
+  shift 2
+  # Remove stale registration; ignore error when name is not yet known
+  claude mcp remove "$name" 2>/dev/null || true
+  # Name MUST come before -e: --env is variadic and would otherwise swallow it.
+  # The "--" terminates --env and delimits the stdio subprocess command.
+  # "$@" allows callers to pass extra "-e KEY=VAL" pairs (e.g. FUNCTION_PREFIX).
+  claude mcp add "$name" \
+    --scope user \
+    -e "FASTMCP_LOG_LEVEL=${LOG}" \
+    "$@" \
+    -- uvx "$package"
+  printf '  [ok] %s\n' "$name"
+}
+
+echo "Registering AWS MCP servers with Claude Code (user scope)..."
+
+# AWS documentation — latest API references, guides, What's New feed
+_register aws-docs \
+  awslabs.aws-documentation-mcp-server@latest
+
+# AWS IaC — CDK L1/L2/L3 constructs, CloudFormation schema, security validation
+_register aws-iac \
+  awslabs.aws-iac-mcp-server@latest
+
+# AWS Lambda — exposes deployed functions as callable Claude tools
+# Set FUNCTION_PREFIX / FUNCTION_LIST / FUNCTION_TAG_KEY+FUNCTION_TAG_VALUE
+# to filter which functions are exposed (recommended for safety).
+_register aws-lambda \
+  awslabs.lambda-tool-mcp-server@latest
+
+# AWS Serverless — SAM CLI build/deploy/invoke, local testing, event generation
+_register aws-serverless \
+  awslabs.aws-serverless-mcp-server@latest
+
+echo "Done. Run 'claude mcp list' to verify."

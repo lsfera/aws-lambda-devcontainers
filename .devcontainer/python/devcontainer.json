@@ -1,0 +1,41 @@
+{
+  "name": "AWS Lambda Python",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "devcontainer",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+
+  "initializeCommand": "bash -c 'ws=\"$1\"; d=\"$ws\"; while [ \"$d\" != \"/\" ]; do if [ -f \"$d/.devcontainer/init.sh\" ]; then exec bash \"$d/.devcontainer/init.sh\" \"$ws\"; fi; d=$(dirname \"$d\"); done; echo \"init.sh not found above $ws\" >&2; exit 1' -- ${localWorkspaceFolder}",
+
+  "features": {
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {}
+  },
+
+  "remoteUser": "vscode",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "amazonwebservices.aws-toolkit-vscode",
+        "ms-azuretools.vscode-docker",
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-python.debugpy",
+        "charliermarsh.ruff"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "python.defaultInterpreterPath": "/usr/local/bin/python3",
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff",
+          "editor.formatOnSave": true,
+          "editor.codeActionsOnSave": {
+            "source.fixAll.ruff": "explicit",
+            "source.organizeImports.ruff": "explicit"
+          }
+        }
+      }
+    }
+  },
+
+  "postCreateCommand": "claude-persist-setup && devcontainer-update"
+}

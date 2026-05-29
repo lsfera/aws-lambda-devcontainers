@@ -1,0 +1,8 @@
+# Base image build context is .devcontainer/. The Dockerfile only needs its
+# three CONTAINER scripts — exclude everything else (variant subfolders, README,
+# .env, host scripts) so the build context stays minimal.
+*
+!Dockerfile
+!claude-persist-setup
+!claude-aws-mcp-setup
+!devcontainer-update

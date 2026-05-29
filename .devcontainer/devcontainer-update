@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# Update all sources that live outside the container image.
+#
+# Runs automatically on every container creation (postCreateCommand).
+# Safe to re-run at any time inside the container:
+#
+#   devcontainer-update
+#
+# What this updates:
+#   AWS CDK              — npm install -g aws-cdk@latest
+#   Well-Architected     — slash commands and CLAUDE.md for Claude Code
+#   AWS MCP servers      — re-registered at user scope via claude mcp add
+#
+# What requires a full image rebuild (build.sh):
+#   AWS CLI, SAM CLI, Node.js, Python, .NET, Docker CLI, uv
+set -euo pipefail
+
+_h()    { printf '\n  \033[1;36m▸ %s\033[0m\n' "$*"; }
+_ok()   { printf '  \033[32m  ✓\033[0m  %s\n' "$*"; }
+_warn() { printf '  \033[33m  ⚠\033[0m  %s\n' "$*"; }
+_ver()  { printf '    %-14s %s\n' "$1" "$2"; }
+
+printf '\n\033[1m  devcontainer-update\033[0m\n'
+printf '  %s\n' "$(date '+%Y-%m-%d %H:%M:%S')"
+
+# ── AWS CDK ───────────────────────────────────────────────────────────────────
+_h "AWS CDK"
+if npm install -g aws-cdk@latest 2>&1 | grep -qE 'changed|added'; then
+  _ok "updated → $(cdk --version)"
+else
+  _ok "already current — $(cdk --version)"
+fi
+
+# ── Well-Architected skills ───────────────────────────────────────────────────
+_h "Well-Architected skills"
+curl -fsSL \
+    https://raw.githubusercontent.com/aws-samples/sample-well-architected-skills-and-steering/main/bootstrap.sh \
+    | bash -s -- --tool claude-code --global --force 2>&1 \
+    | grep -vE '^\s*$' | tail -5 | sed 's/^/    /' \
+    || { _warn "bootstrap fetch failed — skills may be stale"; true; }
+_ok "~/.claude/commands/ refreshed"
+
+# ── AWS MCP servers ───────────────────────────────────────────────────────────
+_h "AWS MCP servers"
+claude-aws-mcp-setup
+
+# ── Git submodules ────────────────────────────────────────────────────────────
+# postCreateCommand runs in workspaceFolder, so $PWD is the repo root.
+# Also safe to call manually from any directory inside the workspace.
+_h "Git submodules"
+GIT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
+if [ -n "$GIT_ROOT" ] && [ -f "${GIT_ROOT}/.gitmodules" ]; then
+  # StrictHostKeyChecking=accept-new: accepts unknown hosts (first clone),
+  # rejects changed fingerprints (protects against MITM). Safer than "no".
+  GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new" \
+    git -C "$GIT_ROOT" submodule update --init --recursive 2>&1 | sed 's/^/    /'
+  COUNT=$(git -C "$GIT_ROOT" submodule status --recursive | wc -l | tr -d ' ')
+  _ok "${COUNT} submodule(s) initialised"
+else
+  _ok "no .gitmodules — skipped"
+fi
+
+# ── Version summary ───────────────────────────────────────────────────────────
+_h "Installed versions"
+_ver "aws-cli"  "$(aws --version 2>&1 | awk '{print $1}')"
+_ver "cdk"      "$(cdk --version)"
+_ver "sam"      "$(sam --version 2>&1 | head -1)"
+_ver "node"     "$(node --version)"
+_ver "uv"       "$(uv --version)"
+_ver "docker"   "$(docker --version 2>/dev/null | awk '{print $3}' | tr -d ',' \
+                    || echo 'socket not yet available')"
+
+# Optional runtimes — present in language variants, absent in base
+command -v dotnet  &>/dev/null && _ver "dotnet"  "$(dotnet --version)"
+command -v python3 &>/dev/null \
+    && python3 --version &>/dev/null 2>&1 \
+    && _ver "python"   "$(python3 --version 2>&1 | awk '{print $2}')"
+
+printf '\n'

@@ -1,0 +1,63 @@
+services:
+  devcontainer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      # Workspace source. Compose (unlike an image-based devcontainer) does not
+      # auto-mount the project, so it must be declared explicitly. Both variables
+      # are written to .env by .devcontainer/init.sh; WORKSPACE_FOLDER matches
+      # "workspaceFolder" in devcontainer.json.
+      - type: bind
+        source: ${LOCAL_WORKSPACE_FOLDER}
+        target: ${WORKSPACE_FOLDER}
+
+      # SSH keys — read-only; used for private git submodule access.
+      # SSH_DIR is written to .env by .devcontainer/init.sh (default: $HOME/.ssh).
+      # System-wide known_hosts are baked into the image so this mount can stay read-only.
+      - type: bind
+        source: ${SSH_DIR}
+        target: /home/vscode/.ssh
+        read_only: true
+        bind:
+          create_host_path: true
+
+      # AWS credentials and config — shared across all variants, never in the image.
+      # Read-write so aws configure / aws sso login work inside the container.
+      # AWS_CONFIG_DIR is written to .env by .devcontainer/init.sh.
+      - type: bind
+        source: ${AWS_CONFIG_DIR}
+        target: /home/vscode/.aws
+        bind:
+          create_host_path: true
+
+      # Claude Code persistence — config, MCP registrations, memory, project history.
+      # CLAUDE_PERSIST_HOST_DIR is written to .env by .devcontainer/init.sh.
+      - type: bind
+        source: ${CLAUDE_PERSIST_HOST_DIR}
+        target: /home/vscode/.claude-persist
+        bind:
+          create_host_path: true
+
+      # Shared npm cache (host, under $HOME) — used by CDK / npm project installs.
+      - type: bind
+        source: ${NPM_CACHE_HOST_DIR}
+        target: /home/vscode/.npm
+        bind:
+          create_host_path: true
+
+      # Docker-out-of-Docker: bind host socket.
+      # For rootless Docker on Linux, set DOCKER_SOCK=/run/user/<UID>/docker.sock in .env.
+      - type: bind
+        source: ${DOCKER_SOCK:-/var/run/docker.sock}
+        target: /var/run/docker.sock
+    # Allows the container's docker group to match the host socket GID.
+    # Find yours with: stat -c '%g' /var/run/docker.sock
+    # Then set DOCKER_GID=<gid> in .env or your shell before opening the devcontainer.
+    group_add:
+      - ${DOCKER_GID:-docker}
+    # Land here on exec / VS Code "Attach to Running Container" — the workspace
+    # bind mount. Without this the container defaults to / and looks empty.
+    working_dir: ${WORKSPACE_FOLDER}
+    command: sleep infinity
+    # No privileged mode needed — DooD only requires socket access

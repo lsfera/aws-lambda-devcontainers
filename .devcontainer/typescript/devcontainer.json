@@ -1,0 +1,36 @@
+{
+  "name": "AWS Lambda TypeScript",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "devcontainer",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+
+  "initializeCommand": "bash -c 'ws=\"$1\"; d=\"$ws\"; while [ \"$d\" != \"/\" ]; do if [ -f \"$d/.devcontainer/init.sh\" ]; then exec bash \"$d/.devcontainer/init.sh\" \"$ws\"; fi; d=$(dirname \"$d\"); done; echo \"init.sh not found above $ws\" >&2; exit 1' -- ${localWorkspaceFolder}",
+
+  "features": {
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {}
+  },
+
+  "remoteUser": "vscode",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "amazonwebservices.aws-toolkit-vscode",
+        "ms-azuretools.vscode-docker",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.codeActionsOnSave": {
+          "source.fixAll.eslint": "explicit"
+        },
+        "typescript.tsdk": "node_modules/typescript/lib"
+      }
+    }
+  },
+
+  "postCreateCommand": "claude-persist-setup && devcontainer-update"
+}
