@@ -13,6 +13,22 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SHARED_ENV="${SCRIPT_DIR}/.env"
 
+# GID that owns the Docker socket *as seen inside a Linux container* — the value
+# the container user must join (via compose `group_add`) to use docker-out-of-docker.
+#   - Docker Desktop (macOS/Windows): the bind-mounted socket is root:root with
+#     group rw (srw-rw----), so the container user must join gid 0. The host's
+#     own group name ("docker") does NOT carry over and has no socket access.
+#   - Native Linux (rootful): the socket keeps its host ownership, so use the
+#     host socket's numeric GID (the host "docker" group).
+detect_docker_gid() {
+  local sock="${1:-/var/run/docker.sock}"
+  case "$(uname -s)" in
+    Darwin|*[Mm][Ii][Nn][Gg]*|*[Cc][Yy][Gg]*) echo 0 ;;
+    *) [ -S "$sock" ] && stat -c '%g' "$sock" 2>/dev/null || echo 0 ;;
+  esac
+}
+DEFAULT_DOCKER_GID="$(detect_docker_gid)"
+
 # Workspace folder. The devcontainer initializeCommand passes the real
 # ${localWorkspaceFolder} as $1, which may be a subdirectory of this repo
 # (e.g. a nested project that reuses this shared .devcontainer). When run
@@ -62,11 +78,12 @@ CLAUDE_PERSIST_HOST_DIR=${HOME}/.devcontainer-claude
 # Rootless Docker on Linux:            /run/user/$(id -u)/docker.sock
 DOCKER_SOCK=/var/run/docker.sock
 
-# GID of the docker group on the host.
-# Find it with: stat -c '%g' /var/run/docker.sock   (Linux)
-#               stat -f '%g' /var/run/docker.sock   (macOS)
-# Leave as "docker" if the name resolves correctly inside the container.
-DOCKER_GID=docker
+# GID the container user joins to reach the Docker socket (docker-out-of-docker).
+# Must match the socket's group *inside* the container, NOT the host group name:
+#   - Docker Desktop (macOS/Windows): socket is root:root group-rw  → 0
+#   - Native Linux (rootful):         the host "docker" group GID   → e.g. 999
+# Auto-detected below; override only if your setup differs.
+DOCKER_GID=${DEFAULT_DOCKER_GID}
 
 # Tag for the base image built by build.sh
 BASE_IMAGE=aws-lambda-base:latest
@@ -98,6 +115,16 @@ fi
 upsert_env LOCAL_WORKSPACE_FOLDER "$WORKSPACE_ROOT"
 upsert_env WORKSPACE_FOLDER       "/workspaces/${WORKSPACE_BASENAME}"
 echo "[init] workspace → ${WORKSPACE_ROOT} (mounts at /workspaces/${WORKSPACE_BASENAME})"
+
+# Repair the docker GID for envs created with the old broken "docker" default
+# (no group named "docker" with socket access exists inside the image, so DooD
+# failed with "permission denied ... /var/run/docker.sock"). Respect any
+# deliberate numeric override the user has set.
+CURRENT_DOCKER_GID="$(sed -n 's/^DOCKER_GID=//p' "$SHARED_ENV" | head -1)"
+if [ -z "$CURRENT_DOCKER_GID" ] || [ "$CURRENT_DOCKER_GID" = "docker" ]; then
+  upsert_env DOCKER_GID "$DEFAULT_DOCKER_GID"
+  echo "[init] Set DOCKER_GID=${DEFAULT_DOCKER_GID} (docker socket group, in-container)"
+fi
 
 # Shared dependency cache paths — appended to a pre-existing .env that predates them.
 ensure_env NPM_CACHE_HOST_DIR  "${HOME}/.devcontainer-cache/npm"

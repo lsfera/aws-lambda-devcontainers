@@ -23,6 +23,19 @@ RUN npm install -g \
 # Drop back to the non-root user for the running container.
 USER vscode
 
+# Pre-create the XDG ~/.local tree as vscode. The pnpm-store bind mount
+# (~/.local/share/pnpm/store) is several levels deep; if these dirs don't
+# already exist in the image, the Docker daemon creates the intermediate
+# parents (~/.local, ~/.local/share, ...) as ROOT when attaching the mount.
+# That leaves ~/.local unwritable by vscode and breaks tools that write there
+# at runtime — e.g. the AWS CloudFormation language server failing with
+# "EACCES: permission denied, mkdir '/home/vscode/.local/state/...'".
+# Creating them here keeps ownership correct; Docker then mounts onto the leaf.
+RUN mkdir -p \
+        /home/vscode/.local/share/pnpm/store \
+        /home/vscode/.local/state \
+        /home/vscode/.local/bin
+
 ENV NPM_CONFIG_FUND=false
 ENV NPM_CONFIG_AUDIT=false
 # Cache locations match the bind mounts in docker-compose.yml (defaults, pinned
